@@ -2,95 +2,92 @@ console.log("SmartSave frontend loaded");
 
 const form = document.getElementById("searchForm");
 const resultsEl = document.getElementById("results");
-const sortEl = document.getElementById("sort");
-const countEl = document.getElementById("count");
+const sortSel = document.getElementById("sort");
 
-function fmtMoney(v) {
-  if (v == null || isNaN(v)) return "—";
-  return new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" }).format(Number(v));
+function showError(msg) {
+  resultsEl.innerHTML = `<div class="error">Error loading results.<br><small>${msg}</small></div>`;
 }
 
 function render(items) {
-  if (!Array.isArray(items) || items.length === 0) {
-    resultsEl.classList.add("empty");
-    resultsEl.innerHTML = `<div class="empty-state">No results.</div>`;
-    countEl.textContent = "";
+  if (!items.length) {
+    resultsEl.innerHTML = `<div class="empty">No results.</div>`;
     return;
   }
-  resultsEl.classList.remove("empty");
-  countEl.textContent = `${items.length} result${items.length === 1 ? "" : "s"}`;
-
-  const html = items.map(r => {
-    const title = r.title || "";
-    const price = r.price != null ? Number(r.price) : null;
-    const ppu = r.price_per_unit ? String(r.price_per_unit) : "";
-    const img = r.image || "";
-    const store = r.store || "Walmart";
-    const url = r.url || "#";
-
+  resultsEl.innerHTML = items.map(r => {
+    // use image proxy to bypass hotlink blocking
+    const imgSrc = r.image ? `/img?u=${encodeURIComponent(r.image)}` : null;
     return `
-      <article class="card">
-        <a class="thumb" href="${url}" target="_blank" rel="noopener">
-          <img loading="lazy" src="${img}" alt="${title.replace(/"/g, "&quot;")}" onerror="this.style.display='none'">
-        </a>
-        <div class="info">
-          <div class="store">${store}</div>
-          <div class="title" title="${title.replace(/"/g, "&quot;")}">${title}</div>
-          <div class="price-row">
-            <div class="price">${fmtMoney(price)}</div>
-            ${ppu ? `<div class="ppu">${ppu}</div>` : ""}
-          </div>
-          <div class="actions">
-            <a class="view" href="${url}" target="_blank" rel="noopener">View</a>
-          </div>
+      <div class="card">
+        <div class="thumb">
+          ${imgSrc
+            ? `<img src="${imgSrc}" alt="${r.title}" loading="lazy" />`
+            : `<div class="noimg">No image</div>`}
         </div>
-      </article>
+        <div class="info">
+          <div class="store">${r.store || "Walmart"}</div>
+          <div class="title">${r.title || ""}</div>
+          <div class="meta">
+            <span class="price">${r.price != null && r.price !== "" ? "$" + Number(r.price).toFixed(2) : "—"}</span>
+            ${r.size_text ? `<span class="size">${r.size_text}</span>` : ""}
+          </div>
+          ${r.url ? `<a href="${r.url}" target="_blank" rel="noopener">View</a>` : ""}
+        </div>
+      </div>
     `;
   }).join("");
-
-  resultsEl.innerHTML = html;
 }
 
-function applySort(items, how) {
-  const sorted = [...items];
-  if (how === "price-asc") {
-    sorted.sort((a, b) => (a.price ?? Infinity) - (b.price ?? Infinity));
-  } else if (how === "price-desc") {
-    sorted.sort((a, b) => (b.price ?? -Infinity) - (a.price ?? -Infinity));
-  } else if (how === "store-asc") {
-    sorted.sort((a, b) => (a.store || "").localeCompare(b.store || ""));
+function sortItems(items, sortKey) {
+  const arr = [...items];
+  const val = (x) => (typeof x.price === "number" ? x.price : (sortKey === "price-asc" ? Infinity : -Infinity));
+  if (sortKey === "price-desc") {
+    arr.sort((a, b) => val(b) - val(a));
+  } else {
+    arr.sort((a, b) => val(a) - val(b));
   }
-  return sorted;
+  return arr;
 }
-
-let lastData = [];
 
 async function runSearch(q, province) {
-  resultsEl.innerHTML = `<div class="loading">Searching…</div>`;
+  resultsEl.textContent = "Searching…";
+  const url = `/api/search?q=${encodeURIComponent(q)}&province=${encodeURIComponent(province)}&sort=${encodeURIComponent(sortSel.value)}`;
   try {
-    const url = `/api/search?q=${encodeURIComponent(q)}&province=${encodeURIComponent(province)}&refresh=true`;
-    const res = await fetch(url);
-    const data = await res.json();
-    if (!Array.isArray(data)) throw new Error("Bad API response");
-    lastData = data;
-    render(applySort(lastData, sortEl.value));
+    const res = await fetch(url, { headers: { "Accept": "application/json" } });
+    const text = await res.text();
+
+    if (!res.ok) {
+      showError(`HTTP ${res.status} – ${text.slice(0, 200)}`);
+      return;
+    }
+
+    let data;
+    try { data = JSON.parse(text); }
+    catch {
+      console.error("Bad JSON from API:", text);
+      showError("Server returned non-JSON.");
+      return;
+    }
+
+    const items = Array.isArray(data) ? data : (data.items || []);
+    const sorted = sortItems(items, sortSel.value);
+    render(sorted);
   } catch (err) {
     console.error(err);
-    resultsEl.innerHTML = `<div class="error">Error loading results.</div>`;
-    countEl.textContent = "";
+    showError(err.message || "Network error");
   }
 }
 
 form?.addEventListener("submit", (e) => {
   e.preventDefault();
-  const q = document.getElementById("q").value.trim();
-  const prov = (document.getElementById("prov").value || "").trim().toUpperCase() || "AB";
-  if (!q) return;
+  const q = document.getElementById("q").value.trim() || "milk";
+  const prov = document.getElementById("prov").value.trim().toUpperCase() || "AB";
   runSearch(q, prov);
 });
 
-sortEl?.addEventListener("change", () => {
-  render(applySort(lastData, sortEl.value));
+sortSel?.addEventListener("change", () => {
+  const q = document.getElementById("q").value.trim() || "milk";
+  const prov = document.getElementById("prov").value.trim().toUpperCase() || "AB";
+  runSearch(q, prov);
 });
 
 window.addEventListener("DOMContentLoaded", () => {

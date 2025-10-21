@@ -1,163 +1,128 @@
 # app.py
-import os
-import csv
-from flask import Flask, jsonify, render_template, request, send_from_directory, abort
+import csv, os, math, io
+from urllib.parse import urlparse
+from flask import Flask, jsonify, request, send_from_directory, render_template, abort, Response
+import requests
 
-# ------------------------------------------------------------------------------
-# Flask setup
-# ------------------------------------------------------------------------------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(APP_DIR, "data")
 
-# Prefer a unified catalog if present; otherwise fall back to the cleaned Walmart file
-DEFAULT_DATA_FILES = [
-    os.path.join(DATA_DIR, "catalog_latest.csv"),
-    os.path.join(DATA_DIR, "walmart_milk_clean.csv"),
-    os.path.join(DATA_DIR, "walmart_milk.csv"),
-]
-
-app = Flask(
-    __name__,
-    static_folder="static",
-    template_folder="templates",
-)
-
-# ------------------------------------------------------------------------------
-# Small in-memory cache of rows to avoid re-reading the CSV on every request
-# ------------------------------------------------------------------------------
-
-_rows_cache = []
-_rows_src_path = None
-_rows_src_mtime = None
+app = Flask(__name__, static_folder="static", template_folder="templates")
 
 
-def _pick_data_file() -> str:
-    """Return the first existing CSV path from DEFAULT_DATA_FILES."""
-    for p in DEFAULT_DATA_FILES:
-        if os.path.exists(p):
-            return p
-    return ""
+# ---------- Data loading ----------
+def _pick_data_file():
+    """Prefer the aggregated catalog if present; otherwise the Walmart clean CSV."""
+    c1 = os.path.join(DATA_DIR, "catalog_latest.csv")
+    c2 = os.path.join(DATA_DIR, "walmart_milk_clean.csv")
+    if os.path.exists(c1): return c1
+    if os.path.exists(c2): return c2
+    return None
 
-
-def _load_rows(force: bool = False):
-    """Load rows from CSV if needed; return the cached list of dicts."""
-    global _rows_cache, _rows_src_path, _rows_src_mtime
-
+def _load_rows():
     csv_path = _pick_data_file()
     if not csv_path:
-        _rows_cache = []
-        _rows_src_path = None
-        _rows_src_mtime = None
-        return _rows_cache
-
-    mtime = os.path.getmtime(csv_path)
-    need_load = (
-        force
-        or _rows_src_path != csv_path
-        or _rows_src_mtime is None
-        or mtime != _rows_src_mtime
-        or not _rows_cache
-    )
-
-    if not need_load:
-        return _rows_cache
-
+        return []
     rows = []
     with open(csv_path, newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for r in reader:
-            # Normalize a few common fields so frontend can rely on them
-            r["store"] = (r.get("store") or "Walmart").strip()
+        for r in csv.DictReader(f):
+            # normalize fields used by the API
+            r["price"] = _safe_price(r.get("price"))
             r["title"] = (r.get("title") or "").strip()
             r["brand"] = (r.get("brand") or "").strip()
-            r["url"] = (r.get("url") or "").strip()
             r["image"] = (r.get("image") or "").strip()
+            r["url"] = (r.get("url") or "").strip()
             r["sku"] = (r.get("sku") or "").strip()
-            r["province"] = (r.get("province") or "").strip().upper()
-            r["price"] = (r.get("price") or "").strip()
-            r["price_per_unit"] = (r.get("price_per_unit") or "").strip()
-            r["size_text"] = (r.get("size_text") or "").strip()
+            r["category"] = (r.get("category") or "").strip()
             r["scraped_at"] = (r.get("scraped_at") or "").strip()
+            # annotate store for the UI (this csv is Walmart)
+            if not r.get("store"):
+                r["store"] = "Walmart"
             rows.append(r)
+    return rows
 
-    _rows_cache = rows
-    _rows_src_path = csv_path
-    _rows_src_mtime = mtime
-    return _rows_cache
+def _safe_price(val):
+    if val is None: return None
+    try:
+        s = str(val).strip().replace("$", "")
+        return float(s) if s != "" else None
+    except Exception:
+        return None
 
 
-# ------------------------------------------------------------------------------
-# Routes
-# ------------------------------------------------------------------------------
+# Cache the CSV into memory for quick API responses
+ROWS = _load_rows()
 
+
+# ---------- Routes ----------
 @app.get("/")
 def home():
-    # Renders templates/index.html which loads /static/style.css and /static/script.js
     return render_template("index.html")
 
 
 @app.get("/api/search")
 def api_search():
-    """
-    Query params:
-      q          : search string (title/brand)
-      province   : province code to filter (optional; if empty returns all)
-      page       : 1-based page number
-      size       : page size (default 50, max 200)
-      refresh    : 'true' to force a CSV reload
-    """
     q = (request.args.get("q") or "").strip().lower()
-    province = (request.args.get("province") or "").strip().upper()
+    sort_key = request.args.get("sort") or "price-asc"  # price-asc | price-desc
     page = max(int(request.args.get("page", 1)), 1)
-    size = max(min(int(request.args.get("size", 50)), 200), 1)
-    refresh = (request.args.get("refresh") or "").lower() in ("1", "true", "yes")
+    size = min(max(int(request.args.get("size", 25)), 1), 100)
 
-    rows = _load_rows(force=refresh)
+    # Filter
+    filtered = []
+    for r in ROWS:
+        text = f"{r.get('title','')} {r.get('brand','')}".lower()
+        if q and q not in text:
+            continue
+        filtered.append(r)
 
-    # simple full-text filter on title + brand
-    if q:
-        rows = [r for r in rows if q in (r["title"] + " " + r["brand"]).lower()]
+    # Sort
+    def price_or_default(x, default):
+        p = x.get("price")
+        return p if isinstance(p, (int, float)) else default
 
-    # optional province filter (will pass everything if rows lack that column)
-    if province:
-        rows = [r for r in rows if (r.get("province") or "").upper() in ("", province)]
+    if sort_key == "price-desc":
+        filtered.sort(key=lambda x: price_or_default(x, -1_000_000), reverse=True)
+    else:
+        filtered.sort(key=lambda x: price_or_default(x, 1_000_000))
 
-    total = len(rows)
+    total = len(filtered)
     start = (page - 1) * size
     end = start + size
-    page_rows = rows[start:end]
+    page_rows = filtered[start:end]
 
-    # IMPORTANT: include "image" so the frontend can render thumbnails
+    items = [
+        {
+            "store": r.get("store") or "Walmart",
+            "title": r.get("title"),
+            "url": r.get("url"),
+            "image": r.get("image"),
+            "price": r.get("price"),
+            "price_per_unit": r.get("price_per_unit"),
+            "brand": r.get("brand"),
+            "sku": r.get("sku"),
+            "size_text": r.get("size_text") or None,
+            "scraped_at": r.get("scraped_at"),
+        }
+        for r in page_rows
+    ]
+    return jsonify({"total": total, "page": page, "size": size, "items": items})
+
+
+
+@app.get("/health")
+def health():
+    csv_path = _pick_data_file()
     return jsonify({
-        "total": total,
-        "page": page,
-        "size": size,
-        "items": [
-            {
-                "store": r.get("store", ""),
-                "title": r.get("title", ""),
-                "price": _safe_price(r.get("price", "")),
-                "url": r.get("url", ""),
-                "image": r.get("image", ""),
-                "brand": r.get("brand", ""),
-                "sku": r.get("sku", ""),
-                "province": r.get("province", ""),
-                "price_per_unit": r.get("price_per_unit", ""),
-                "size_text": r.get("size_text", ""),
-                "scraped_at": r.get("scraped_at", ""),
-            }
-            for r in page_rows
-        ],
+        "ok": True,
+        "csv": os.path.basename(csv_path) if csv_path else None,
+        "rows_cached": len(ROWS)
     })
 
 
+# Serve files from ./data for quick inspection (read-only)
 @app.get("/static/data/<path:filename>")
-def static_data(filename: str):
-    """
-    Serve CSVs from ./data so you can download them, e.g.:
-      /static/data/catalog_latest.csv
-      /static/data/walmart_milk_clean.csv
-    """
+def static_data(filename):
+    # security: only allow paths under DATA_DIR
     safe_path = os.path.normpath(os.path.join(DATA_DIR, filename))
     if not safe_path.startswith(DATA_DIR):
         return abort(403)
@@ -166,33 +131,39 @@ def static_data(filename: str):
     return send_from_directory(DATA_DIR, filename, as_attachment=False)
 
 
-@app.get("/health")
-def health():
-    csv_path = _pick_data_file()
-    exists = bool(csv_path)
-    total = len(_load_rows())
-    return jsonify({
-        "ok": exists,
-        "csv": os.path.basename(csv_path) if csv_path else None,
-        "rows_cached": total,
-    })
+# ---------- Image proxy (fixes Walmart hotlinking) ----------
+ALLOWED_IMAGE_HOSTS = {"i5.walmartimages.com", "i5.walmartimages.ca", "i5.walmartimages.com.mx", "images.walmart.ca"}
 
+@app.get("/img")
+def proxy_image():
+    """
+    Proxies remote product images to bypass CDN hotlink restrictions.
+    Usage: /img?u=<encoded URL>
+    Only allows Walmart image hosts & https scheme.
+    """
+    src = request.args.get("u", "").strip()
+    if not src:
+        return abort(400, "missing u")
 
-# ------------------------------------------------------------------------------
-# Helpers
-# ------------------------------------------------------------------------------
-def _safe_price(val):
-    """Convert price to float if possible; otherwise return None."""
     try:
-        s = str(val).strip().replace("$", "")
-        return float(s) if s else None
+        parsed = urlparse(src)
     except Exception:
-        return None
+        return abort(400, "bad url")
+
+    if parsed.scheme != "https" or parsed.netloc.lower() not in ALLOWED_IMAGE_HOSTS:
+        return abort(403, "host not allowed")
+
+    try:
+        r = requests.get(src, timeout=10, stream=True, headers={"User-Agent": "Mozilla/5.0"})
+        content = r.content
+        ct = r.headers.get("Content-Type", "image/jpeg")
+        resp = Response(content, status=r.status_code, mimetype=ct)
+        resp.headers["Cache-Control"] = "public, max-age=86400"
+        return resp
+    except requests.RequestException:
+        return abort(504, "image fetch timeout")
 
 
-# ------------------------------------------------------------------------------
-# Entrypoint
-# ------------------------------------------------------------------------------
 if __name__ == "__main__":
-    # Run with debug so code changes auto-reload while developing.
+    # run dev server
     app.run(debug=True, host="127.0.0.1", port=5000)

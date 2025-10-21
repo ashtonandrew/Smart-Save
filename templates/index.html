@@ -8,27 +8,19 @@
 </head>
 <body>
   <div class="container">
-    <header class="topbar">
-      <h1>SmartSave</h1>
-      <form id="searchForm">
-        <input id="q" placeholder="Search (e.g., milk)" />
-        <input id="prov" placeholder="Province (e.g., AB)" value="AB" />
-        <button type="submit">Search</button>
-      </form>
-      <div class="controls">
-        <label>
-          Sort:
-          <select id="sort">
-            <option value="price-asc">Price ↑</option>
-            <option value="price-desc">Price ↓</option>
-            <option value="store-asc">Store A→Z</option>
-          </select>
-        </label>
-        <span id="count"></span>
-      </div>
-    </header>
+    <h1>SmartSave</h1>
 
-    <div id="results" class="grid"></div>
+    <form id="searchForm">
+      <input id="q" placeholder="Search (e.g., milk)" />
+      <input id="prov" placeholder="Province (e.g., AB)" value="AB" />
+      <select id="sort">
+        <option value="price-asc">Price ↑</option>
+        <option value="price-desc">Price ↓</option>
+      </select>
+      <button type="submit">Search</button>
+    </form>
+
+    <div id="results"></div>
   </div>
 
   <script src="{{ url_for('static', filename='script.js') }}" defer></script>
