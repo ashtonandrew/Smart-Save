@@ -8,17 +8,29 @@
 </head>
 <body>
   <div class="container">
-    <h1>SmartSave</h1>
-    <form id="searchForm">
-      <input id="q" placeholder="Search (e.g., milk)" />
-      <input id="prov" placeholder="Province (e.g., AB)" value="AB" />
-      <button type="submit">Search</button>
-    </form>
-    <div id="results"></div>
+    <header class="topbar">
+      <h1>SmartSave</h1>
+      <form id="searchForm">
+        <input id="q" placeholder="Search (e.g., milk)" />
+        <input id="prov" placeholder="Province (e.g., AB)" value="AB" />
+        <button type="submit">Search</button>
+      </form>
+      <div class="controls">
+        <label>
+          Sort:
+          <select id="sort">
+            <option value="price-asc">Price ↑</option>
+            <option value="price-desc">Price ↓</option>
+            <option value="store-asc">Store A→Z</option>
+          </select>
+        </label>
+        <span id="count"></span>
+      </div>
+    </header>
+
+    <div id="results" class="grid"></div>
   </div>
 
-  <!-- CSV parser for fallback data (must load before script.js) -->
-  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js" defer></script>
   <script src="{{ url_for('static', filename='script.js') }}" defer></script>
 </body>
 </html>

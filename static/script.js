@@ -2,97 +2,95 @@ console.log("SmartSave frontend loaded");
 
 const form = document.getElementById("searchForm");
 const resultsEl = document.getElementById("results");
+const sortEl = document.getElementById("sort");
+const countEl = document.getElementById("count");
 
-// --- CSV fallback helpers ---
-let _csvCache = null;
-
-// NOTE: put your cleaned CSV at: static/data/walmart_milk_clean.csv
-async function loadWalmartCsv() {
-  if (_csvCache) return _csvCache;
-  const url = "/static/data/walmart_milk_clean.csv";
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`CSV HTTP ${res.status}`);
-  const text = await res.text();
-  const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
-  _csvCache = Array.isArray(parsed.data) ? parsed.data : [];
-  return _csvCache;
+function fmtMoney(v) {
+  if (v == null || isNaN(v)) return "—";
+  return new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" }).format(Number(v));
 }
 
-function toNumberOrNull(v) {
-  if (v == null) return null;
-  const n = Number(String(v).replace(/[^\d.]/g, ""));
-  return Number.isFinite(n) ? n : null;
+function render(items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    resultsEl.classList.add("empty");
+    resultsEl.innerHTML = `<div class="empty-state">No results.</div>`;
+    countEl.textContent = "";
+    return;
+  }
+  resultsEl.classList.remove("empty");
+  countEl.textContent = `${items.length} result${items.length === 1 ? "" : "s"}`;
+
+  const html = items.map(r => {
+    const title = r.title || "";
+    const price = r.price != null ? Number(r.price) : null;
+    const ppu = r.price_per_unit ? String(r.price_per_unit) : "";
+    const img = r.image || "";
+    const store = r.store || "Walmart";
+    const url = r.url || "#";
+
+    return `
+      <article class="card">
+        <a class="thumb" href="${url}" target="_blank" rel="noopener">
+          <img loading="lazy" src="${img}" alt="${title.replace(/"/g, "&quot;")}" onerror="this.style.display='none'">
+        </a>
+        <div class="info">
+          <div class="store">${store}</div>
+          <div class="title" title="${title.replace(/"/g, "&quot;")}">${title}</div>
+          <div class="price-row">
+            <div class="price">${fmtMoney(price)}</div>
+            ${ppu ? `<div class="ppu">${ppu}</div>` : ""}
+          </div>
+          <div class="actions">
+            <a class="view" href="${url}" target="_blank" rel="noopener">View</a>
+          </div>
+        </div>
+      </article>
+    `;
+  }).join("");
+
+  resultsEl.innerHTML = html;
 }
 
-async function searchCsvFallback(q) {
-  const query = (q || "").trim().toLowerCase();
-  const rows = await loadWalmartCsv();
-
-  const filtered = rows
-    .filter(r => r && (r.title || "").toLowerCase().includes(query))
-    .map(r => ({
-      store: "Walmart",
-      title: r.title || "",
-      price: toNumberOrNull(r.price),
-      url: r.url || "",
-      image: r.image || null
-    }));
-
-  return filtered;
+function applySort(items, how) {
+  const sorted = [...items];
+  if (how === "price-asc") {
+    sorted.sort((a, b) => (a.price ?? Infinity) - (b.price ?? Infinity));
+  } else if (how === "price-desc") {
+    sorted.sort((a, b) => (b.price ?? -Infinity) - (a.price ?? -Infinity));
+  } else if (how === "store-asc") {
+    sorted.sort((a, b) => (a.store || "").localeCompare(b.store || ""));
+  }
+  return sorted;
 }
 
-// --- UI rendering (kept simple like your current version) ---
-function renderCards(list) {
-  resultsEl.innerHTML = list.map(r => `
-    <div class="card">
-      <div><strong>${r.store || "—"}</strong></div>
-      <div>${r.title || "Untitled"}</div>
-      <div>${r.price != null ? "$" + Number(r.price).toFixed(2) : "—"}</div>
-      <a href="${r.url || "#"}" target="_blank" rel="noopener">View</a>
-    </div>
-  `).join("");
-}
+let lastData = [];
 
-// --- Search flow: API first, then CSV fallback ---
 async function runSearch(q, province) {
-  resultsEl.textContent = "Searching…";
-
-  // 1) Try API
+  resultsEl.innerHTML = `<div class="loading">Searching…</div>`;
   try {
     const url = `/api/search?q=${encodeURIComponent(q)}&province=${encodeURIComponent(province)}&refresh=true`;
     const res = await fetch(url);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-
-    if (Array.isArray(data) && data.length > 0) {
-      renderCards(data);
-      return;
-    }
+    if (!Array.isArray(data)) throw new Error("Bad API response");
+    lastData = data;
+    render(applySort(lastData, sortEl.value));
   } catch (err) {
-    console.warn("API search failed, will try CSV fallback:", err);
-  }
-
-  // 2) Fallback to CSV
-  try {
-    const csvData = await searchCsvFallback(q);
-    if (csvData.length > 0) {
-      renderCards(csvData);
-    } else {
-      resultsEl.textContent = "No results.";
-    }
-  } catch (csvErr) {
-    console.error("CSV fallback failed:", csvErr);
-    resultsEl.textContent = "No results.";
+    console.error(err);
+    resultsEl.innerHTML = `<div class="error">Error loading results.</div>`;
+    countEl.textContent = "";
   }
 }
 
-// --- Events ---
 form?.addEventListener("submit", (e) => {
   e.preventDefault();
   const q = document.getElementById("q").value.trim();
-  const prov = document.getElementById("prov").value.trim().toUpperCase() || "AB";
+  const prov = (document.getElementById("prov").value || "").trim().toUpperCase() || "AB";
   if (!q) return;
   runSearch(q, prov);
+});
+
+sortEl?.addEventListener("change", () => {
+  render(applySort(lastData, sortEl.value));
 });
 
 window.addEventListener("DOMContentLoaded", () => {
