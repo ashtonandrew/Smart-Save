@@ -1,4 +1,4 @@
-# Force IPv4 for DNS lookups (helps on some Windows/ISP setups)
+# Forces IPv4 resolution to avoid odd ISP/IPv6 issues on Windows.
 import socket
 import contextlib
 

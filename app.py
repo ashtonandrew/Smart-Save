@@ -6,12 +6,13 @@ import os
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
-# Instantiate scrapers (share Playwright where needed per request)
 SCRAPERS = [
     WalmartScraper(),
     SaveOnFoodsScraper(),
-    # PC Express (Real Canadian Superstore). You can add "nofrills" or "loblaws" later.
+    # PC-Express brands
     PCExpressScraper(chain="Real Canadian Superstore", base_url="https://www.realcanadiansuperstore.ca"),
+    PCExpressScraper(chain="No Frills", base_url="https://www.nofrills.ca"),
+    PCExpressScraper(chain="Loblaws", base_url="https://www.loblaws.ca"),
 ]
 
 @app.route("/")
@@ -28,7 +29,6 @@ def api_search():
     if not q:
         return jsonify([])
 
-    # Run scrapers, merge, filter, sort
     results = []
     for s in SCRAPERS:
         try:
@@ -37,7 +37,7 @@ def api_search():
         except Exception as e:
             print(f"[SCRAPER ERROR] {s.name}: {e!r}")
 
-    # Dedup + only priced + sort ascending
+    # dedupe + only priced + sort
     seen = set()
     out = []
     for r in results:
@@ -53,6 +53,5 @@ def api_search():
     return jsonify(out)
 
 if __name__ == "__main__":
-    # Let the cache directory be configurable, but default to ./data
     os.environ.setdefault("SMARTSAVE_DATA_DIR", os.path.join(os.path.dirname(__file__), "data"))
     app.run(debug=True)

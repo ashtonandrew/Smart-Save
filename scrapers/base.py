@@ -5,14 +5,10 @@ from abc import ABC, abstractmethod
 DATA_DIR = os.environ.get("SMARTSAVE_DATA_DIR") or os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-PRICE_RE = re.compile(r"\$?\s*(\d{1,3}(?:,\d{3})*\.\d{2})")
-
 def _slug(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", (s or "").lower()).strip("-")
 
 class BaseScraper(ABC):
-    """Shared cache + helpers. Subclasses implement fetch_html() / parse()."""
-
     name: str = "Base"
 
     def __init__(self, chain: str, base_url: str, ttl_seconds: int = 3*60*60):
@@ -20,7 +16,7 @@ class BaseScraper(ABC):
         self.base_url = base_url.rstrip("/")
         self.ttl = ttl_seconds
 
-    # ---------- Cache ----------
+    # cache helpers
     def _csv_name(self, query: str, province: str) -> str:
         return f"{_slug(query)}_{(province or 'NA').upper()}_{_slug(self.chain)}.csv"
 
@@ -61,29 +57,26 @@ class BaseScraper(ABC):
             for r in rows:
                 w.writerow({k: r.get(k) for k in keys})
 
-    # ---------- Hooks ----------
     @abstractmethod
     def fetch_html(self, query: str, province: str, timeout: int) -> Optional[str]:
-        """Return HTML for the search results (plain requests or Playwright)."""
         pass
 
     @abstractmethod
     def parse(self, html: str, limit: int) -> List[Dict]:
-        """Parse HTML into [{title, price, image, url}]"""
         pass
 
-    # ---------- Public ----------
     def search(self, query: str, province: str = "", force_refresh: bool = False, limit: int = 12) -> List[Dict]:
-        # try cache
+        print(f"[SCRAPE] {self.chain}: q='{query}' prov='{province}' force_refresh={force_refresh}")
         if not force_refresh:
             cached = self._read_cache(query, province)
             if cached:
+                print(f"[SCRAPE] {self.chain}: using cache rows={len(cached)}")
                 return cached
 
-        html = self.fetch_html(query, province, timeout=25)
-        items = self.parse(html or "", limit=limit)
+        html = self.fetch_html(query, province, timeout=25) or ""
+        items = self.parse(html, limit=limit)
+        print(f"[SCRAPE] {self.chain}: parsed items={len(items)}")
 
-        # stamp & keep only priced rows
         ts = str(int(time.time()))
         out = []
         for it in items:
@@ -99,4 +92,5 @@ class BaseScraper(ABC):
                 "queried_at": ts,
             })
         self._write_cache(query, province, out)
+        print(f"[SCRAPE] {self.chain}: saved rows={len(out)} -> {self._csv_name(query, province)}")
         return out

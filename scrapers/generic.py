@@ -6,8 +6,7 @@ import requests
 import net_prefs
 
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-      "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
-
+      "KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 HEADERS = {
     "User-Agent": UA,
     "Accept-Language": "en-CA,en;q=0.9",
@@ -50,6 +49,7 @@ def parse_products(html: str, base_url: str, limit: int = 12) -> List[Dict]:
     seen = set()
     base_host = urlparse(base_url).netloc
 
+    # cast a wide net for potential tiles
     candidates = soup.select(
         "[data-testid*='product'], [data-automation*='product'], [data-test*='product'], "
         "[class*='product'], li, article, div"
@@ -59,18 +59,26 @@ def parse_products(html: str, base_url: str, limit: int = 12) -> List[Dict]:
         a = el.find("a", href=True)
         if not a: continue
         url = urljoin(base_url, a["href"])
-        if not looks_like_product_url(base_host, url):   # drop non-product links
+        if not looks_like_product_url(base_host, url):
             continue
 
-        t_el = el.find(attrs={"data-testid": re.compile("title", re.I)}) or el.find(["h1","h2","h3"]) or el.find("span")
-        title = t_el.get_text(" ", strip=True) if t_el else None
+        # title: prefer headings or explicit title attributes
+        t_el = (el.find(attrs={"data-testid": re.compile("title", re.I)}) or
+                el.find(attrs={"aria-label": True}) or
+                el.find(["h1","h2","h3"]) or
+                el.find("span"))
+        title = (t_el.get("aria-label") if t_el and t_el.has_attr("aria-label")
+                 else (t_el.get_text(" ", strip=True) if t_el else None))
         if not title: continue
         tnorm = title.lower().strip()
         if tnorm in BLOCKLIST or tnorm.startswith("results for"):
             continue
 
-        p_el = el.find(attrs={"data-testid": re.compile("price", re.I)}) or el.find("span", string=PRICE_RE) or el.find("div", string=PRICE_RE)
-        price_text = p_el.get_text(" ", strip=True) if p_el else el.get_text(" ", strip=True)
+        # price: check explicit price nodes, fallback to any text in the element
+        p_el = (el.find(attrs={"data-testid": re.compile("price", re.I)}) or
+                el.find("span", string=PRICE_RE) or
+                el.find("div", string=PRICE_RE))
+        price_text = (p_el.get_text(" ", strip=True) if p_el else el.get_text(" ", strip=True))
         price = extract_price(price_text)
         if price is None:
             continue
@@ -83,27 +91,24 @@ def parse_products(html: str, base_url: str, limit: int = 12) -> List[Dict]:
         seen.add(key)
 
         items.append({"title": title[:200], "price": price, "image": img_url, "url": url})
-        if len(items) >= limit: break
+        if len(items) >= limit:
+            break
 
     return items
 
 def playwright_render(url: str, timeout: int = 25, before: Optional[callable] = None) -> Optional[str]:
-    """Render a page with Playwright (if installed). Optionally run a setup function before navigate."""
     try:
         from playwright.sync_api import sync_playwright
     except Exception:
         return None
-
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             ctx = browser.new_context(user_agent=UA, locale="en-CA")
             page = ctx.new_page()
             page.set_default_timeout(timeout * 1000)
-
             if before:
                 before(page)
-
             page.goto(url, wait_until="load")
             page.wait_for_timeout(1200)
             html = page.content()

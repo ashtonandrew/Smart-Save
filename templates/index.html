@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SmartSave</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="container">
+    <h1>SmartSave</h1>
+    <form id="searchForm">
+      <input id="q" placeholder="Search (e.g., milk)" />
+      <input id="prov" placeholder="Province (e.g., AB)" value="AB" />
+      <button type="submit">Search</button>
+    </form>
+    <div id="results"></div>
+  </div>
+  <script src="{{ url_for('static', filename='script.js') }}" defer></script>
+</body>
+</html>
