@@ -1,57 +1,103 @@
-from flask import Flask, render_template, request, jsonify
-from scrapers.walmart_scrape import WalmartScraper
-from scrapers.saveonfoods import SaveOnFoodsScraper
-from scrapers.pcx import PCExpressScraper
-import os
+# app.py
+from flask import Flask, render_template, jsonify, request
+from pathlib import Path
+import csv
 
-app = Flask(__name__, template_folder="templates", static_folder="static")
+app = Flask(__name__)
 
-SCRAPERS = [
-    WalmartScraper(),
-    SaveOnFoodsScraper(),
-    # PC-Express brands
-    PCExpressScraper(chain="Real Canadian Superstore", base_url="https://www.realcanadiansuperstore.ca"),
-    PCExpressScraper(chain="No Frills", base_url="https://www.nofrills.ca"),
-    PCExpressScraper(chain="Loblaws", base_url="https://www.loblaws.ca"),
-]
+# Paths
+ROOT = Path(__file__).parent
+DATA_PATH = ROOT / "data" / "walmart_milk_clean.csv"
+
+def try_float(x):
+    try:
+        return float(x)
+    except:
+        return None
+
+def load_walmart_rows():
+    """Load cleaned Walmart rows from CSV and normalize a bit."""
+    rows = []
+    if not DATA_PATH.exists():
+        return rows
+    with DATA_PATH.open(newline="", encoding="utf-8") as f:
+        r = csv.DictReader(f)
+        for row in r:
+            title = (row.get("title") or "").strip()
+            url = (row.get("url") or "").strip()
+            if not title or not url:
+                continue
+            rows.append({
+                "store": "Walmart",
+                "title": title,
+                "brand": (row.get("brand") or "").strip(),
+                "price": try_float(row.get("price")),
+                "price_per_unit": (row.get("price_per_unit") or "").strip(),
+                "image": (row.get("image") or "").strip(),
+                "url": url,
+                "sku": (row.get("sku") or "").strip(),
+                "scraped_at": (row.get("scraped_at") or "").strip(),
+            })
+    return rows
 
 @app.route("/")
 def home():
+    # templates/index.html references static/style.css and static/script.js via url_for
     return render_template("index.html")
+
+@app.route("/api/health")
+def health():
+    return jsonify({
+        "status": "ok",
+        "csv_found": DATA_PATH.exists(),
+        "csv_path": str(DATA_PATH)
+    })
 
 @app.route("/api/search")
 def api_search():
-    q = (request.args.get("q") or "").strip()
-    province = (request.args.get("province") or "").strip().upper()
-    refresh = (request.args.get("refresh") or "false").lower() == "true"
-    max_items = int(request.args.get("limit") or 12)
+    """
+    Example:
+      /api/search?q=milk&province=AB&refresh=true
 
-    if not q:
-        return jsonify([])
+    - q:        search term (required-ish; if empty we return everything)
+    - province: currently not used for Walmart, but accepted for future stores
+    - refresh:  accepted but ignored here (we just read the cleaned CSV)
+    """
+    q = (request.args.get("q") or "").strip().lower()
+    _province = (request.args.get("province") or "").strip().upper()
+    # refresh flag is accepted but not used in this minimal server
+    # refresh = request.args.get("refresh") in ("1", "true", "True")
 
-    results = []
-    for s in SCRAPERS:
-        try:
-            rows = s.search(q, province=province, force_refresh=refresh, limit=max_items)
-            results.extend(rows)
-        except Exception as e:
-            print(f"[SCRAPER ERROR] {s.name}: {e!r}")
+    rows = load_walmart_rows()
 
-    # dedupe + only priced + sort
-    seen = set()
-    out = []
-    for r in results:
-        if r.get("price") is None:
-            continue
-        key = (r.get("store"), r.get("title"), r.get("url"))
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(r)
-    out.sort(key=lambda x: x["price"])
+    # Filter by query if provided
+    if q:
+        rows = [r for r in rows if q in r["title"].lower()]
 
-    return jsonify(out)
+    # Basic sort: by price (unknowns last), then title
+    def sort_key(r):
+        p = r["price"]
+        return (p is None, p if p is not None else 0, r["title"].lower())
+
+    rows.sort(key=sort_key)
+
+    # Send back only what your frontend expects (it currently uses store,title,price,url)
+    payload = [
+        {
+            "store": r["store"],
+            "title": r["title"],
+            "price": r["price"],
+            "url": r["url"],
+            "image": r["image"],
+            "brand": r["brand"],
+            "sku": r["sku"],
+            "price_per_unit": r["price_per_unit"],
+            "scraped_at": r["scraped_at"],
+        }
+        for r in rows
+    ]
+    return jsonify(payload)
 
 if __name__ == "__main__":
-    os.environ.setdefault("SMARTSAVE_DATA_DIR", os.path.join(os.path.dirname(__file__), "data"))
-    app.run(debug=True)
+    # Run the dev server:  http://127.0.0.1:5000
+    app.run(debug=True, host="127.0.0.1", port=5000)
