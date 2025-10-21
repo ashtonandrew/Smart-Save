@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, jsonify
-from scrapers.walmart import WalmartScraper
+from scrapers.walmart_scrape import WalmartScraper
 from scrapers.saveonfoods import SaveOnFoodsScraper
 from scrapers.pcx import PCExpressScraper
 import os
