@@ -1,2 +1,3 @@
-2025/10/20-23:07:06.792 614c Creating DB C:\Users\ashto\OneDrive\Desktop\Project SmartSave\Smart-Save\.pw_walmart\Default\Site Characteristics Database since it was missing.
-2025/10/20-23:07:06.808 614c Reusing MANIFEST C:\Users\ashto\OneDrive\Desktop\Project SmartSave\Smart-Save\.pw_walmart\Default\Site Characteristics Database/MANIFEST-000001
+2025/10/20-23:14:04.422 3bd0 Reusing MANIFEST C:\Users\ashto\OneDrive\Desktop\Project SmartSave\Smart-Save\.pw_walmart\Default\Site Characteristics Database/MANIFEST-000001
+2025/10/20-23:14:04.422 3bd0 Recovering log #3
+2025/10/20-23:14:04.423 3bd0 Reusing old log C:\Users\ashto\OneDrive\Desktop\Project SmartSave\Smart-Save\.pw_walmart\Default\Site Characteristics Database/000003.log 

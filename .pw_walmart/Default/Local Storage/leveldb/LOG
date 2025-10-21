@@ -1,5 +1,6 @@
-2025/10/20-23:07:06.817 5bf0 Creating DB C:\Users\ashto\OneDrive\Desktop\Project SmartSave\Smart-Save\.pw_walmart\Default\Local Storage\leveldb since it was missing.
-2025/10/20-23:07:06.842 5bf0 Reusing MANIFEST C:\Users\ashto\OneDrive\Desktop\Project SmartSave\Smart-Save\.pw_walmart\Default\Local Storage\leveldb/MANIFEST-000001
-2025/10/20-23:08:06.862 71ac Level-0 table #5: started
-2025/10/20-23:08:06.868 71ac Level-0 table #5: 116003 bytes OK
-2025/10/20-23:08:06.872 71ac Delete type=0 #3
+2025/10/20-23:14:04.442 391c Reusing MANIFEST C:\Users\ashto\OneDrive\Desktop\Project SmartSave\Smart-Save\.pw_walmart\Default\Local Storage\leveldb/MANIFEST-000001
+2025/10/20-23:14:04.445 391c Recovering log #4
+2025/10/20-23:14:04.446 391c Reusing old log C:\Users\ashto\OneDrive\Desktop\Project SmartSave\Smart-Save\.pw_walmart\Default\Local Storage\leveldb/000004.log 
+2025/10/20-23:15:04.449 16a8 Level-0 table #8: started
+2025/10/20-23:15:04.454 16a8 Level-0 table #8: 121622 bytes OK
+2025/10/20-23:15:04.457 16a8 Delete type=0 #4
