@@ -1,0 +1,70 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.venv/
+.env
+
+# Databases
+*.db
+*.sqlite*
+*.sql
+
+# Data (keep the one file you want tracked)
+data/**/*
+!data/catalog_latest.csv     # keep a small sample if you want it in Git
+# Or comment out the line above and ignore all CSVs:
+# data/*.csv
+
+# Parquet / large artifacts
+data/*.parquet
+*.parquet
+
+# Logs / cache
+*.log
+.cache/
+.playwright/
+node_modules/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.venv/
+.env
+
+# Databases
+*.db
+*.sqlite*
+*.sql
+
+# Data (keep the one file you want tracked)
+data/**/*
+!data/catalog_latest.csv     # keep a small sample if you want it in Git
+# Or comment out the line above and ignore all CSVs:
+# data/*.csv
+
+# Parquet / large artifacts
+data/*.parquet
+*.parquet
+
+# Logs / cache
+*.log
+.cache/
+.playwright/
+node_modules/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
