@@ -1,4 +1,7 @@
 Flask==3.0.3
 pandas==2.2.3
+python-slugify==8.0.4
+beautifulsoup4==4.12.3
 python-dotenv==1.0.1
-pyarrow==16.1.0   # optional; fine to keep
+playwright==1.55.0
+openai>=1.51.0
